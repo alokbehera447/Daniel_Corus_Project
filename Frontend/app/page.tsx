@@ -222,13 +222,17 @@ export default function Home() {
     <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6">
       <div className="max-w-6xl mx-auto">
         {/* COMPANY NAME */}
-        <div className="text-center mb-10">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2 tracking-tight">
-            Daniel Corus
+        {/* COMPANY NAME + LOGO (LEFT ALIGNED) */}
+        <div className="mb-10 flex items-center gap-4">
+          <img
+            src="/danieli_logo.svg"
+            alt="Danieli Corus Logo"
+            className="h-10 w-auto"
+          />
+
+          <h1 className="text-3xl font-bold text-black tracking-tight">
+            DANIELI <span className="font-light">CORUS</span>
           </h1>
-          <p className="text-gray-600 text-lg">
-            Advanced Block Optimization System
-          </p>
         </div>
 
         {/* MAIN CARD */}
