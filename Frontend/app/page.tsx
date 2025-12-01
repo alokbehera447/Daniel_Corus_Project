@@ -4,7 +4,17 @@ import React, { useState, useRef, useEffect } from "react";
 
 export default function Home() {
   // ==========================
-  // STATE MANAGEMENT
+  // AUTHENTICATION STATE
+  // ==========================
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [showLogin, setShowLogin] = useState(true);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [userInitial, setUserInitial] = useState("");
+
+  // ==========================
+  // EXISTING STATE MANAGEMENT
   // ==========================
   const [blockData, setBlockData] = useState<any[]>([]);
   const [selectedBlocks, setSelectedBlocks] = useState<string[]>([]);
@@ -21,9 +31,68 @@ export default function Home() {
   const [running, setRunning] = useState(false);
   const [approaches, setApproaches] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
 
   // ==========================
-  // HELPER FUNCTIONS
+  // LOGIN HANDLERS
+  // ==========================
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError("");
+    setLoginLoading(true);
+
+    // Basic validation
+    if (!username.trim() || !password.trim()) {
+      setLoginError("Please enter both username and password");
+      setLoginLoading(false);
+      return;
+    }
+
+    // Simulate API call with timeout
+    setTimeout(() => {
+      // For now, we'll accept any non-empty credentials
+      if (username.trim() && password.trim()) {
+        setIsLoggedIn(true);
+        setShowLogin(false);
+        setUserInitial(username.charAt(0).toUpperCase());
+
+        // Store login state in localStorage
+        localStorage.setItem("isLoggedIn", "true");
+        localStorage.setItem("userInitial", username.charAt(0).toUpperCase());
+      } else {
+        setLoginError("Invalid credentials");
+      }
+      setLoginLoading(false);
+    }, 500); // 1 second loading
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setShowLogin(true);
+    setUsername("");
+    setPassword("");
+    setUserInitial("");
+    setIsUserDropdownOpen(false); // Use new state
+    localStorage.removeItem("isLoggedIn");
+    localStorage.removeItem("userInitial");
+  };
+
+  // Check for existing login on component mount
+  useEffect(() => {
+    const loggedIn = localStorage.getItem("isLoggedIn");
+    const initial = localStorage.getItem("userInitial");
+
+    if (loggedIn === "true" && initial) {
+      setIsLoggedIn(true);
+      setShowLogin(false);
+      setUserInitial(initial);
+    }
+  }, []);
+
+  // ==========================
+  // EXISTING HELPER FUNCTIONS
   // ==========================
 
   // Get block identifier - always returns a string
@@ -64,23 +133,35 @@ export default function Home() {
   });
 
   // Close dropdown when clicking outside
+  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
-        setIsDropdownOpen(false);
-        setSearchTerm("");
+      const target = event.target as HTMLElement;
+      // Only close on click outside for mobile devices
+      if (isMobile && !target.closest(".user-profile-dropdown")) {
+        setIsUserDropdownOpen(false); // Use new state
       }
     };
 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [isMobile]);
+  // Add device detection
+useEffect(() => {
+  const checkDevice = () => {
+    setIsMobile(window.innerWidth < 768);
+  };
+  
+  // Check initially
+  checkDevice();
+  
+  // Add resize listener
+  window.addEventListener('resize', checkDevice);
+  return () => window.removeEventListener('resize', checkDevice);
+}, []);
 
   // ==========================
-  // EXCEL FILE IMPORT HANDLER
+  // EXISTING FILE IMPORT HANDLER
   // ==========================
   const handleFileUpload = async (
     event: React.ChangeEvent<HTMLInputElement>
@@ -133,17 +214,15 @@ export default function Home() {
   };
 
   // ==========================
-  // BLOCK SELECTION HANDLERS
+  // EXISTING BLOCK SELECTION HANDLERS
   // ==========================
   const toggleBlock = (mark: string, e?: React.MouseEvent) => {
-    // Prevent event propagation if event is provided
     if (e) {
       e.stopPropagation();
     }
     setSelectedBlocks((prev) =>
       prev.includes(mark) ? prev.filter((x) => x !== mark) : [...prev, mark]
     );
-    // Don't close dropdown - keep it open
   };
 
   const handleSelectAll = () => {
@@ -160,7 +239,7 @@ export default function Home() {
   };
 
   // ==========================
-  // RUN BUTTON LOGIC
+  // EXISTING RUN BUTTON LOGIC
   // ==========================
   const onRun = async () => {
     if (blockData.length === 0) {
@@ -267,7 +346,7 @@ export default function Home() {
       );
     } finally {
       setRunning(false);
-    }
+    }, 1500);
   };
 
   // Selected blocks display text
@@ -278,17 +357,99 @@ export default function Home() {
           selectedBlocks.length > 1 ? "s" : ""
         } selected`;
 
-  return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6">
+  // ==========================
+  // RENDER MAIN INTERFACE
+  // ==========================
+  const renderMainInterface = () => (
+    <main
+      className={`min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6 ${
+        showLogin ? "blur-sm" : ""
+      }`}
+    >
       <div className="max-w-6xl mx-auto">
-        {/* COMPANY NAME */}
-        <div className="text-center mb-10">
-          <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2 tracking-tight">
-            Daniel Corus
-          </h1>
-          <p className="text-gray-600 text-lg">
-            Advanced Block Optimization System
-          </p>
+        {/* HEADER WITH USER PROFILE */}
+        <div className="flex justify-between items-center mb-10">
+          {/* COMPANY NAME + LOGO */}
+          <div className="flex items-center gap-4">
+            <img
+              src="/danieli_logo.svg"
+              alt="Danieli Corus Logo"
+              className="h-10 w-auto"
+            />
+            <h1 className="text-3xl font-bold text-black tracking-tight">
+              DANIELI <span className="font-light">CORUS</span>
+            </h1>
+          </div>
+
+          {/* USER PROFILE */}
+          {/* USER PROFILE */}
+          {isLoggedIn && (
+            <div className="flex items-center gap-4">
+              <div className="relative group user-profile-dropdown">
+                {" "}
+                {/* Add class here */}
+                <div
+                  className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg cursor-pointer shadow-lg"
+                  onClick={
+                    isMobile
+                      ? () => setIsUserDropdownOpen(!isUserDropdownOpen) // Use new state
+                      : undefined
+                  }
+                >
+                  {userInitial}
+                </div>
+                {/* Desktop: Hover Dropdown */}
+                {!isMobile && (
+                  <div className="absolute right-0 top-full mt-2 w-48 bg-white/95 backdrop-blur-lg rounded-xl shadow-2xl border border-white/20 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 z-50">
+                    <button
+                      onClick={handleLogout}
+                      className="w-full px-4 py-3 text-left text-gray-700 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors font-medium flex items-center gap-3"
+                    >
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                        />
+                      </svg>
+                      Logout
+                    </button>
+                  </div>
+                )}
+                {/* Mobile: Click Dropdown */}
+                {isMobile &&
+                  isUserDropdownOpen && ( // Use new state
+                    <div className="absolute right-0 top-full mt-2 w-48 bg-white/95 backdrop-blur-lg rounded-xl shadow-2xl border border-white/20 z-50">
+                      <button
+                        onClick={handleLogout}
+                        className="w-full px-4 py-3 text-left text-gray-700 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors font-medium flex items-center gap-3"
+                      >
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                          />
+                        </svg>
+                        Logout
+                      </button>
+                    </div>
+                  )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* MAIN CARD */}
@@ -449,7 +610,6 @@ export default function Home() {
                 {/* DROPDOWN CONTENT */}
                 {isDropdownOpen && (
                   <div className="absolute top-full left-0 right-0 mt-2 bg-white/95 backdrop-blur-lg border border-gray-200/80 rounded-xl shadow-2xl z-50 max-h-96 overflow-y-auto">
-                    {/* SEARCH BAR */}
                     {/* SEARCH BAR */}
                     <div className="p-4 border-b border-gray-100/50 bg-white">
                       <div className="relative">
@@ -748,7 +908,8 @@ export default function Home() {
                       window.open(fullPath, '_blank');
                     }
                   }}
-                  className={`bg-gradient-to-br ${a.color} p-6 rounded-2xl text-white shadow-2xl transform transition-all duration-300 hover:scale-105 ${a.visualizationFile ? 'cursor-pointer' : ''}`}
+                  className={`bg-gradient-to-br ${a.color} p-6 rounded-2xl text-white shadow-2xl transform transition-all duration-300 hover:scale-105 ${a.visualizationFile ? 'cursor-pointer' : ''} cursor-pointer`}
+                  onClick={() => handleApproachClick(a.title)}
                 >
                   <div className="flex justify-between items-start mb-4">
                     <h4 className="font-bold text-xl">{a.title}</h4>
@@ -781,5 +942,187 @@ export default function Home() {
         </div>
       </div>
     </main>
+  );
+
+  // ==========================
+  // LOGIN OVERLAY COMPONENT
+  // ==========================
+  const renderLoginOverlay = () => (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+      {/* Backdrop Blur */}
+      <div className="absolute inset-0 bg-black/20 backdrop-blur-md"></div>
+
+      {/* Login Card */}
+      <div className="relative bg-white/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 w-full max-w-md transform transition-all duration-500 scale-100">
+        {/* Card Header */}
+        <div className="p-8 pb-0">
+          <div className="flex items-center justify-center gap-4 mb-8">
+            <img
+              src="/danieli_logo.svg"
+              alt="Danieli Corus Logo"
+              className="h-12 w-auto"
+            />
+            <h1 className="text-2xl font-bold text-gray-800 tracking-tight">
+              DANIELI <span className="font-light">CORUS</span>
+            </h1>
+          </div>
+
+          <div className="text-center mb-8">
+            <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-3">
+              Welcome Back
+            </h2>
+            <p className="text-gray-600 text-lg">
+              Sign in to access the optimization system
+            </p>
+          </div>
+        </div>
+
+        {/* Login Form */}
+        <form onSubmit={handleLogin} className="p-8 pt-6">
+          {loginError && (
+            <div className="mb-6 p-4 bg-red-50/80 border border-red-200/50 rounded-xl backdrop-blur-sm">
+              <p className="text-red-600 font-medium flex items-center gap-2 text-sm">
+                <svg
+                  className="w-4 h-4 flex-shrink-0"
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                {loginError}
+              </p>
+            </div>
+          )}
+
+          <div className="space-y-6">
+            {/* Username Field */}
+            <div>
+              <label
+                htmlFor="username"
+                className="block text-sm font-semibold text-gray-700 mb-2"
+              >
+                Username
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <svg
+                    className="h-5 w-5 text-gray-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                    />
+                  </svg>
+                </div>
+                <input
+                  id="username"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full pl-10 pr-4 py-4 border-2 border-gray-200/80 bg-white/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm font-medium text-gray-700 placeholder-gray-400"
+                  placeholder="Enter your username"
+                />
+              </div>
+            </div>
+
+            {/* Password Field */}
+            <div>
+              <label
+                htmlFor="password"
+                className="block text-sm font-semibold text-gray-700 mb-2"
+              >
+                Password
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <svg
+                    className="h-5 w-5 text-gray-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                    />
+                  </svg>
+                </div>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full pl-10 pr-4 py-4 border-2 border-gray-200/80 bg-white/50 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm font-medium text-gray-700 placeholder-gray-400"
+                  placeholder="Enter your password"
+                />
+              </div>
+            </div>
+
+            {/* Login Button */}
+            <button
+              type="submit"
+              disabled={loginLoading}
+              className={`w-full px-8 py-4 text-white font-semibold text-lg rounded-xl shadow-2xl transform transition-all duration-300 hover:scale-105 active:scale-95 ${
+                loginLoading
+                  ? "bg-gradient-to-r from-gray-400 to-gray-500 cursor-not-allowed"
+                  : "bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shadow-blue-500/25"
+              }`}
+            >
+              {loginLoading ? (
+                <div className="flex items-center justify-center gap-3">
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  Signing In...
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-3">
+                  <svg
+                    className="w-5 h-5 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"
+                    />
+                  </svg>
+                  Sign In to System
+                </div>
+              )}
+            </button>
+          </div>
+        </form>
+
+        {/* Footer Note */}
+        <div className="p-8 pt-6 border-t border-gray-100/50">
+          <p className="text-center text-gray-500 text-sm">
+            Secure access to Danieli Corus optimization platform
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ==========================
+  // MAIN RENDER
+  // ==========================
+  return (
+    <>
+      {renderMainInterface()}
+      {showLogin && renderLoginOverlay()}
+    </>
   );
 }
