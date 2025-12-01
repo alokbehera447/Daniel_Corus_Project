@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { API_URL } from "@/lib/config";
+
 export default function Home() {
   // ==========================
   // AUTHENTICATION STATE
@@ -25,9 +26,9 @@ export default function Home() {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // PARENT BLOCK TYPES
+  // PARENT BLOCK TYPES - MULTI-SELECT
   const parentBlocks = ["500×500×2000", "800×400×2000"];
-  const [selectedParent, setSelectedParent] = useState(parentBlocks[0]);
+  const [selectedParents, setSelectedParents] = useState<string[]>(["500×500×2000"]);
 
   // RUN LOGIC
   const [running, setRunning] = useState(false);
@@ -366,7 +367,26 @@ export default function Home() {
   };
 
   // ==========================
-  // EXISTING RUN BUTTON LOGIC
+  // PARENT BLOCK SELECTION HANDLERS
+  // ==========================
+  const toggleParentBlock = (parent: string) => {
+    setSelectedParents((prev) =>
+      prev.includes(parent)
+        ? prev.filter((p) => p !== parent)
+        : [...prev, parent]
+    );
+  };
+
+  const handleSelectAllParents = () => {
+    if (selectedParents.length === parentBlocks.length) {
+      setSelectedParents([]);
+    } else {
+      setSelectedParents([...parentBlocks]);
+    }
+  };
+
+  // ==========================
+  // UPDATED RUN BUTTON LOGIC WITH MULTI-PARENT SUPPORT
   // ==========================
   const onRun = async () => {
     if (blockData.length === 0) {
@@ -376,6 +396,11 @@ export default function Home() {
 
     if (selectedBlocks.length === 0) {
       setError("Please select at least one block.");
+      return;
+    }
+
+    if (selectedParents.length === 0) {
+      setError("Please select at least one parent block.");
       return;
     }
 
@@ -389,8 +414,9 @@ export default function Home() {
         selectedBlocks.includes(getBlockIdentifier(block))
       );
 
-      // Parse parent block dimensions (e.g., "500×500×2000" or "800×400×2000")
-      const [width, height, length] = selectedParent
+      // Use the first selected parent for backward compatibility
+      // Later you can modify this to handle multiple parents
+      const [width, height, length] = selectedParents[0]
         .split("×")
         .map((dim) => parseInt(dim.trim(), 10));
 
@@ -420,6 +446,7 @@ export default function Home() {
       };
 
       console.log("Sending optimization request:", payload);
+      console.log("Selected parent blocks:", selectedParents);
 
       // Call the optimization API
       const response = await makeAuthenticatedRequest(
@@ -445,7 +472,7 @@ export default function Home() {
       const transformedApproaches =
         result.configurations?.map((config: any, idx: number) => ({
           title: `Approach ${config.rank}`,
-          desc: config.description || "Optimized cutting plan",
+          desc: config.description || `Optimized cutting plan using ${selectedParents.length} stock type(s)`,
           efficiency: `${config.efficiency?.toFixed(1)}%`,
           waste: `${config.waste?.toFixed(1)}%`,
           color:
@@ -460,6 +487,7 @@ export default function Home() {
           primaryPart: config.primary_part,
           mergingPlaneOrder: config.merging_plane_order,
           visualizationFile: config.visualization_file,
+          stockTypesUsed: selectedParents,
         })) || [];
 
       setApproaches(transformedApproaches);
@@ -911,39 +939,113 @@ export default function Home() {
             </div>
           )}
 
-          {/* PARENT BLOCK SELECTOR */}
+          {/* PARENT BLOCK SELECTOR - MULTI SELECT */}
           <div className="mb-8">
             <h3 className="font-semibold text-lg mb-4 text-gray-700 flex items-center gap-2">
               <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
-              Select Parent Block
+              Select Parent Blocks (Select one or both)
             </h3>
-            <div className="relative">
-              <select
-                className="w-full p-4 border-2 border-gray-200/80 bg-white/50 rounded-xl shadow-sm appearance-none cursor-pointer hover:border-purple-300/50 transition-all duration-300 backdrop-blur-sm font-medium text-gray-700"
-                value={selectedParent}
-                onChange={(e) => setSelectedParent(e.target.value)}
+
+            <div className="space-y-4">
+              {/* SELECT ALL PARENTS OPTION */}
+              <div
+                className="flex items-center gap-3 p-3 border-2 border-gray-200/80 bg-white/50 rounded-xl shadow-sm hover:border-purple-300/50 transition-all duration-300 backdrop-blur-sm cursor-pointer"
+                onClick={handleSelectAllParents}
               >
-                {parentBlocks.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-              </select>
-              <div className="absolute right-4 top-1/2 transform -translate-y-1/2 pointer-events-none">
-                <svg
-                  className="w-5 h-5 text-gray-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+                <div
+                  className={`w-5 h-5 border-2 rounded-md flex items-center justify-center transition-all duration-200 ${
+                    selectedParents.length === parentBlocks.length
+                      ? "bg-purple-500 border-purple-500"
+                      : "border-gray-300"
+                  }`}
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
+                  {selectedParents.length === parentBlocks.length && (
+                    <svg
+                      className="w-3 h-3 text-white"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  )}
+                </div>
+                <span className="font-medium text-gray-700">
+                  {selectedParents.length === parentBlocks.length
+                    ? "Deselect All Parent Blocks"
+                    : "Select All Parent Blocks"}
+                </span>
               </div>
+
+              {/* INDIVIDUAL PARENT BLOCK OPTIONS */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {parentBlocks.map((parent) => (
+                  <div
+                    key={parent}
+                    className={`p-4 border-2 rounded-xl shadow-sm transition-all duration-300 backdrop-blur-sm cursor-pointer ${
+                      selectedParents.includes(parent)
+                        ? "border-purple-500 bg-purple-50/50"
+                        : "border-gray-200/80 bg-white/50 hover:border-purple-300/50"
+                    }`}
+                    onClick={() => toggleParentBlock(parent)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={`w-5 h-5 border-2 rounded-md flex items-center justify-center transition-all duration-200 ${
+                            selectedParents.includes(parent)
+                              ? "bg-purple-500 border-purple-500"
+                              : "border-gray-300"
+                          }`}
+                        >
+                          {selectedParents.includes(parent) && (
+                            <svg
+                              className="w-3 h-3 text-white"
+                              fill="currentColor"
+                              viewBox="0 0 20 20"
+                            >
+                              <path
+                                fillRule="evenodd"
+                                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                                clipRule="evenodd"
+                              />
+                            </svg>
+                          )}
+                        </div>
+                        <span className="font-medium text-gray-700">
+                          {parent}
+                        </span>
+                      </div>
+                      {selectedParents.includes(parent) && (
+                        <span className="text-purple-600 text-sm font-semibold">
+                          Selected
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* SELECTED PARENT BLOCKS SUMMARY */}
+              {selectedParents.length > 0 && (
+                <div className="mt-4 p-3 bg-purple-50/50 rounded-lg border border-purple-200/50">
+                  <p className="text-sm text-purple-700">
+                    <span className="font-semibold">{selectedParents.length}</span>{" "}
+                    parent block{selectedParents.length > 1 ? "s" : ""} selected:
+                    <span className="ml-2 font-medium">
+                      {selectedParents.join(", ")}
+                    </span>
+                  </p>
+                  <p className="text-xs text-purple-600 mt-1">
+                    {selectedParents.length === 1
+                      ? "Optimization will use this stock type"
+                      : "Optimization will consider multiple stock types"}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -971,9 +1073,11 @@ export default function Home() {
           <div className="text-center">
             <button
               onClick={onRun}
-              disabled={running || blockData.length === 0}
+              disabled={
+                running || blockData.length === 0 || selectedParents.length === 0
+              }
               className={`px-12 py-4 rounded-xl text-white font-semibold text-lg shadow-2xl transform transition-all duration-300 hover:scale-105 active:scale-95 ${
-                running || blockData.length === 0
+                running || blockData.length === 0 || selectedParents.length === 0
                   ? "bg-gradient-to-r from-gray-400 to-gray-500 cursor-not-allowed"
                   : "bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shadow-blue-500/25"
               }`}
@@ -1237,7 +1341,7 @@ export default function Home() {
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       strokeWidth={2}
-                      d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"
+                      d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
                     />
                   </svg>
                   Sign In to System
