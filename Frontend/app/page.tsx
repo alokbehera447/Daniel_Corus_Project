@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { API_URL } from '@/lib/config';
+import { API_URL } from "@/lib/config";
 export default function Home() {
   // ==========================
   // AUTHENTICATION STATE
@@ -93,9 +93,7 @@ export default function Home() {
       setLoginError("");
     } catch (error: any) {
       console.error("Login error:", error);
-      setLoginError(
-        error.message || "Invalid credentials. Please try again."
-      );
+      setLoginError(error.message || "Invalid credentials. Please try again.");
     } finally {
       setLoginLoading(false);
     }
@@ -233,7 +231,7 @@ export default function Home() {
 
     try {
       setError(null);
-      
+
       // Use authenticated request for upload
       const response = await makeAuthenticatedRequest("/api/upload", {
         method: "POST",
@@ -328,13 +326,13 @@ export default function Home() {
     const checkDevice = () => {
       setIsMobile(window.innerWidth < 768);
     };
-    
+
     // Check initially
     checkDevice();
-    
+
     // Add resize listener
-    window.addEventListener('resize', checkDevice);
-    return () => window.removeEventListener('resize', checkDevice);
+    window.addEventListener("resize", checkDevice);
+    return () => window.removeEventListener("resize", checkDevice);
   }, []);
 
   // Trigger file input click
@@ -424,8 +422,8 @@ export default function Home() {
       console.log("Sending optimization request:", payload);
 
       // Call the optimization API
-      const response = await fetch(
-        "http://127.0.0.1:8000/api/configurations/top3/",
+      const response = await makeAuthenticatedRequest(
+        `${API_URL}/api/configurations/top3/`,
         {
           method: "POST",
           headers: {
@@ -444,8 +442,8 @@ export default function Home() {
       console.log("Received optimization response:", result);
 
       // Transform API response to match UI format
-      const transformedApproaches = result.configurations?.map(
-        (config: any, idx: number) => ({
+      const transformedApproaches =
+        result.configurations?.map((config: any, idx: number) => ({
           title: `Approach ${config.rank}`,
           desc: config.description || "Optimized cutting plan",
           efficiency: `${config.efficiency?.toFixed(1)}%`,
@@ -462,8 +460,7 @@ export default function Home() {
           primaryPart: config.primary_part,
           mergingPlaneOrder: config.merging_plane_order,
           visualizationFile: config.visualization_file,
-        })
-      ) || [];
+        })) || [];
 
       setApproaches(transformedApproaches);
     } catch (error) {
@@ -1045,11 +1042,15 @@ export default function Home() {
                   key={idx}
                   onClick={() => {
                     if (a.visualizationFile) {
-                      const fullPath = `/mnt/data_drive/cutting_blocks/backend/outputs/${a.visualizationFile}`;
-                      window.open(fullPath, '_blank');
+                      const fullPath = `${API_URL}/api/visualizations/${a.visualizationFile}`;
+                      window.open(fullPath, "_blank");
                     }
                   }}
-                  className={`bg-gradient-to-br ${a.color} p-6 rounded-2xl text-white shadow-2xl transform transition-all duration-300 hover:scale-105 ${a.visualizationFile ? 'cursor-pointer' : ''}`}
+                  className={`bg-gradient-to-br ${
+                    a.color
+                  } p-6 rounded-2xl text-white shadow-2xl transform transition-all duration-300 hover:scale-105 ${
+                    a.visualizationFile ? "cursor-pointer" : ""
+                  }`}
                 >
                   <div className="flex justify-between items-start mb-4">
                     <h4 className="font-bold text-xl">{a.title}</h4>
