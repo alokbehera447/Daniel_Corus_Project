@@ -162,7 +162,7 @@ export default function Home() {
   // ==========================
   // RUN BUTTON LOGIC
   // ==========================
-  const onRun = () => {
+  const onRun = async () => {
     if (blockData.length === 0) {
       setError("Please import an Excel file first.");
       return;
@@ -177,32 +177,97 @@ export default function Home() {
     setRunning(true);
     setApproaches([]);
 
-    setTimeout(() => {
-      setApproaches([
-        {
-          title: "Approach 1",
-          desc: "Optimized cutting plan for selected blocks.",
-          efficiency: "95%",
-          waste: "2.3%",
-          color: "from-green-500 to-emerald-600",
+    try {
+      // Get selected block objects
+      const selectedBlockObjects = blockData.filter((block) =>
+        selectedBlocks.includes(getBlockIdentifier(block))
+      );
+
+      // Parse parent block dimensions (e.g., "500×500×2000" or "800×400×2000")
+      const [width, height, length] = selectedParent
+        .split("×")
+        .map((dim) => parseInt(dim.trim(), 10));
+
+      // Transform blocks to API format
+      const parts = selectedBlockObjects.map((block) => ({
+        name: getBlockIdentifier(block),
+        W1: parseFloat(getBlockValue(block, "A(W1)")) || 0,
+        W2: parseFloat(getBlockValue(block, "B(W2)")) || 0,
+        D: parseFloat(getBlockValue(block, "D(length)")) || 0,
+        thickness: parseFloat(getBlockValue(block, "Thickness")) || 0,
+        alpha: parseFloat(getBlockValue(block, "α")) || 0,
+      }));
+
+      // Prepare request payload
+      const payload = {
+        stock_dimensions: {
+          length: length,
+          width: width,
+          height: height,
         },
-        {
-          title: "Approach 2",
-          desc: "Balanced plan with moderate recovery rates.",
-          efficiency: "88%",
-          waste: "4.1%",
-          color: "from-blue-500 to-cyan-600",
+        parts: parts,
+        config_params: {
+          saw_kerf: 0.0,
+          merging_plane_orders: ["XY-X"],
         },
+        top_n: 3,
+      };
+
+      console.log("Sending optimization request:", payload);
+
+      // Call the optimization API
+      const response = await fetch(
+        "http://127.0.0.1:8000/api/configurations/top3/",
         {
-          title: "Approach 3",
-          desc: "Backup approach with stable performance.",
-          efficiency: "82%",
-          waste: "5.7%",
-          color: "from-purple-500 to-indigo-600",
-        },
-      ]);
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+
+      console.log("Received optimization response:", result);
+
+      // Transform API response to match UI format
+      const transformedApproaches = result.configurations?.map(
+        (config: any, idx: number) => ({
+          title: `Approach ${config.rank}`,
+          desc: config.description || "Optimized cutting plan",
+          efficiency: `${config.efficiency?.toFixed(1)}%`,
+          waste: `${config.waste?.toFixed(1)}%`,
+          color:
+            idx === 0
+              ? "from-green-500 to-emerald-600"
+              : idx === 1
+              ? "from-blue-500 to-cyan-600"
+              : "from-purple-500 to-indigo-600",
+          // Store additional data for potential future use
+          totalParts: config.total_parts,
+          partsBreakdown: config.parts_breakdown,
+          primaryPart: config.primary_part,
+          mergingPlaneOrder: config.merging_plane_order,
+          visualizationFile: config.visualization_file,
+        })
+      ) || [];
+
+      setApproaches(transformedApproaches);
+    } catch (error) {
+      console.error("Error running optimization:", error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Failed to run optimization. Please try again."
+      );
+    } finally {
       setRunning(false);
-    }, 1500);
+    }
   };
 
   // Selected blocks display text
@@ -677,7 +742,13 @@ export default function Home() {
               {approaches.map((a, idx) => (
                 <div
                   key={idx}
-                  className={`bg-gradient-to-br ${a.color} p-6 rounded-2xl text-white shadow-2xl transform transition-all duration-300 hover:scale-105`}
+                  onClick={() => {
+                    if (a.visualizationFile) {
+                      const fullPath = `/mnt/data_drive/cutting_blocks/backend/outputs/${a.visualizationFile}`;
+                      window.open(fullPath, '_blank');
+                    }
+                  }}
+                  className={`bg-gradient-to-br ${a.color} p-6 rounded-2xl text-white shadow-2xl transform transition-all duration-300 hover:scale-105 ${a.visualizationFile ? 'cursor-pointer' : ''}`}
                 >
                   <div className="flex justify-between items-start mb-4">
                     <h4 className="font-bold text-xl">{a.title}</h4>
