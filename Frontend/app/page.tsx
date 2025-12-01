@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-
+import { API_URL } from '@/lib/config';
 export default function Home() {
   // ==========================
   // AUTHENTICATION STATE
@@ -54,7 +54,7 @@ export default function Home() {
 
     try {
       // Make API call to Django JWT endpoint
-      const response = await fetch("http://localhost:8000/auth/login/", {
+      const response = await fetch(`${API_URL}/auth/login/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -108,7 +108,7 @@ export default function Home() {
         throw new Error("No refresh token available");
       }
 
-      const response = await fetch("http://localhost:8000/auth/refresh/", {
+      const response = await fetch(`${API_URL}/auth/refresh/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
