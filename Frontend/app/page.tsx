@@ -12,6 +12,8 @@ export default function Home() {
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [userInitial, setUserInitial] = useState("");
+  const [accessToken, setAccessToken] = useState<string>("");
+  const [refreshToken, setRefreshToken] = useState<string>("");
 
   // ==========================
   // EXISTING STATE MANAGEMENT
@@ -36,7 +38,7 @@ export default function Home() {
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
 
   // ==========================
-  // LOGIN HANDLERS
+  // JWT AUTHENTICATION FUNCTIONS
   // ==========================
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,22 +52,89 @@ export default function Home() {
       return;
     }
 
-    // Simulate API call with timeout
-    setTimeout(() => {
-      // For now, we'll accept any non-empty credentials
-      if (username.trim() && password.trim()) {
-        setIsLoggedIn(true);
-        setShowLogin(false);
-        setUserInitial(username.charAt(0).toUpperCase());
+    try {
+      // Make API call to Django JWT endpoint
+      const response = await fetch("http://localhost:8000/auth/login/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username: username.trim(),
+          password: password.trim(),
+        }),
+      });
 
-        // Store login state in localStorage
-        localStorage.setItem("isLoggedIn", "true");
-        localStorage.setItem("userInitial", username.charAt(0).toUpperCase());
-      } else {
-        setLoginError("Invalid credentials");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.detail || `Login failed: ${response.statusText}`
+        );
       }
+
+      const data = await response.json();
+
+      // Store tokens
+      setAccessToken(data.access);
+      setRefreshToken(data.refresh);
+
+      // Update authentication state
+      setIsLoggedIn(true);
+      setShowLogin(false);
+      setUserInitial(username.charAt(0).toUpperCase());
+
+      // Store authentication state
+      localStorage.setItem("isLoggedIn", "true");
+      localStorage.setItem("userInitial", username.charAt(0).toUpperCase());
+      localStorage.setItem("accessToken", data.access);
+      localStorage.setItem("refreshToken", data.refresh);
+      localStorage.setItem("username", username.trim());
+
+      setLoginError("");
+    } catch (error: any) {
+      console.error("Login error:", error);
+      setLoginError(
+        error.message || "Invalid credentials. Please try again."
+      );
+    } finally {
       setLoginLoading(false);
-    }, 500); // 1 second loading
+    }
+  };
+
+  const refreshAccessToken = async () => {
+    try {
+      const refresh = localStorage.getItem("refreshToken");
+      if (!refresh) {
+        throw new Error("No refresh token available");
+      }
+
+      const response = await fetch("http://localhost:8000/auth/refresh/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          refresh: refresh,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Token refresh failed");
+      }
+
+      const data = await response.json();
+      const newAccessToken = data.access;
+
+      // Update tokens
+      setAccessToken(newAccessToken);
+      localStorage.setItem("accessToken", newAccessToken);
+
+      return newAccessToken;
+    } catch (error) {
+      console.error("Token refresh error:", error);
+      handleLogout();
+      return null;
+    }
   };
 
   const handleLogout = () => {
@@ -74,22 +143,130 @@ export default function Home() {
     setUsername("");
     setPassword("");
     setUserInitial("");
-    setIsUserDropdownOpen(false); // Use new state
+    setAccessToken("");
+    setRefreshToken("");
+    setIsUserDropdownOpen(false);
+
+    // Clear all auth data from localStorage
     localStorage.removeItem("isLoggedIn");
     localStorage.removeItem("userInitial");
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("refreshToken");
+    localStorage.removeItem("username");
   };
 
   // Check for existing login on component mount
   useEffect(() => {
     const loggedIn = localStorage.getItem("isLoggedIn");
     const initial = localStorage.getItem("userInitial");
+    const storedAccessToken = localStorage.getItem("accessToken");
+    const storedRefreshToken = localStorage.getItem("refreshToken");
+    const storedUsername = localStorage.getItem("username");
 
-    if (loggedIn === "true" && initial) {
+    if (
+      loggedIn === "true" &&
+      initial &&
+      storedAccessToken &&
+      storedRefreshToken &&
+      storedUsername
+    ) {
       setIsLoggedIn(true);
       setShowLogin(false);
       setUserInitial(initial);
+      setAccessToken(storedAccessToken);
+      setRefreshToken(storedRefreshToken);
+      setUsername(storedUsername);
     }
   }, []);
+
+  // ==========================
+  // AUTHENTICATED API REQUEST FUNCTION
+  // ==========================
+  const makeAuthenticatedRequest = async (
+    url: string,
+    options: RequestInit = {}
+  ) => {
+    let token = accessToken;
+
+    // Add authorization header
+    const headers = {
+      ...options.headers,
+      Authorization: `Bearer ${token}`,
+    };
+
+    try {
+      const response = await fetch(url, { ...options, headers });
+
+      // If token expired, try to refresh it
+      if (response.status === 401) {
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          // Retry request with new token
+          headers.Authorization = `Bearer ${newToken}`;
+          return await fetch(url, { ...options, headers });
+        }
+      }
+
+      return response;
+    } catch (error) {
+      console.error("API request error:", error);
+      throw error;
+    }
+  };
+
+  // ==========================
+  // UPDATED FILE IMPORT HANDLER WITH AUTH
+  // ==========================
+  const handleFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.match(/\.(xlsx|xls|csv)$/)) {
+      setError("Please upload a valid Excel file (.xlsx, .xls, .csv)");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      setError(null);
+      
+      // Use authenticated request for upload
+      const response = await makeAuthenticatedRequest("/api/upload", {
+        method: "POST",
+        body: formData,
+        // Don't set Content-Type header for FormData, let browser set it
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          throw new Error("Authentication required. Please login again.");
+        }
+        throw new Error(`Upload failed: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+
+      if (result.success && result.data) {
+        setBlockData(result.data);
+        setSelectedBlocks([]);
+        setIsDropdownOpen(false);
+        setSearchTerm("");
+
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+      } else {
+        setError(result.error || "Failed to process Excel file");
+      }
+    } catch (error: any) {
+      console.error("Error uploading file:", error);
+      setError(error.message || "Error uploading file. Please try again.");
+    }
+  };
 
   // ==========================
   // EXISTING HELPER FUNCTIONS
@@ -133,80 +310,32 @@ export default function Home() {
   });
 
   // Close dropdown when clicking outside
-  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
       // Only close on click outside for mobile devices
       if (isMobile && !target.closest(".user-profile-dropdown")) {
-        setIsUserDropdownOpen(false); // Use new state
+        setIsUserDropdownOpen(false);
       }
     };
 
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isMobile]);
+
   // Add device detection
-useEffect(() => {
-  const checkDevice = () => {
-    setIsMobile(window.innerWidth < 768);
-  };
-  
-  // Check initially
-  checkDevice();
-  
-  // Add resize listener
-  window.addEventListener('resize', checkDevice);
-  return () => window.removeEventListener('resize', checkDevice);
-}, []);
-
-  // ==========================
-  // EXISTING FILE IMPORT HANDLER
-  // ==========================
-  const handleFileUpload = async (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (!file.name.match(/\.(xlsx|xls|csv)$/)) {
-      setError("Please upload a valid Excel file (.xlsx, .xls, .csv)");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      setError(null);
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Upload failed: ${response.statusText}`);
-      }
-
-      const result = await response.json();
-
-      if (result.success && result.data) {
-        setBlockData(result.data);
-        setSelectedBlocks([]);
-        setIsDropdownOpen(false);
-        setSearchTerm("");
-
-        if (fileInputRef.current) {
-          fileInputRef.current.value = "";
-        }
-      } else {
-        setError(result.error || "Failed to process Excel file");
-      }
-    } catch (error) {
-      console.error("Error uploading file:", error);
-      setError("Error uploading file. Please try again.");
-    }
-  };
+  useEffect(() => {
+    const checkDevice = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    
+    // Check initially
+    checkDevice();
+    
+    // Add resize listener
+    window.addEventListener('resize', checkDevice);
+    return () => window.removeEventListener('resize', checkDevice);
+  }, []);
 
   // Trigger file input click
   const triggerFileInput = () => {
@@ -323,17 +452,14 @@ useEffect(() => {
           </div>
 
           {/* USER PROFILE */}
-          {/* USER PROFILE */}
           {isLoggedIn && (
             <div className="flex items-center gap-4">
               <div className="relative group user-profile-dropdown">
-                {" "}
-                {/* Add class here */}
                 <div
                   className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-lg cursor-pointer shadow-lg"
                   onClick={
                     isMobile
-                      ? () => setIsUserDropdownOpen(!isUserDropdownOpen) // Use new state
+                      ? () => setIsUserDropdownOpen(!isUserDropdownOpen)
                       : undefined
                   }
                 >
@@ -342,6 +468,14 @@ useEffect(() => {
                 {/* Desktop: Hover Dropdown */}
                 {!isMobile && (
                   <div className="absolute right-0 top-full mt-2 w-48 bg-white/95 backdrop-blur-lg rounded-xl shadow-2xl border border-white/20 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 z-50">
+                    <div className="p-3 border-b border-gray-100">
+                      <p className="text-sm text-gray-600 font-medium">
+                        Signed in as
+                      </p>
+                      <p className="font-semibold text-gray-800 truncate">
+                        {username}
+                      </p>
+                    </div>
                     <button
                       onClick={handleLogout}
                       className="w-full px-4 py-3 text-left text-gray-700 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors font-medium flex items-center gap-3"
@@ -364,30 +498,37 @@ useEffect(() => {
                   </div>
                 )}
                 {/* Mobile: Click Dropdown */}
-                {isMobile &&
-                  isUserDropdownOpen && ( // Use new state
-                    <div className="absolute right-0 top-full mt-2 w-48 bg-white/95 backdrop-blur-lg rounded-xl shadow-2xl border border-white/20 z-50">
-                      <button
-                        onClick={handleLogout}
-                        className="w-full px-4 py-3 text-left text-gray-700 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors font-medium flex items-center gap-3"
-                      >
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
-                          />
-                        </svg>
-                        Logout
-                      </button>
+                {isMobile && isUserDropdownOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-48 bg-white/95 backdrop-blur-lg rounded-xl shadow-2xl border border-white/20 z-50">
+                    <div className="p-3 border-b border-gray-100">
+                      <p className="text-sm text-gray-600 font-medium">
+                        Signed in as
+                      </p>
+                      <p className="font-semibold text-gray-800 truncate">
+                        {username}
+                      </p>
                     </div>
-                  )}
+                    <button
+                      onClick={handleLogout}
+                      className="w-full px-4 py-3 text-left text-gray-700 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors font-medium flex items-center gap-3"
+                    >
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                        />
+                      </svg>
+                      Logout
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
