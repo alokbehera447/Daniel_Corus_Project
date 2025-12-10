@@ -28,7 +28,9 @@ export default function Home() {
 
   // PARENT BLOCK TYPES - MULTI-SELECT
   const parentBlocks = ["500×500×2000", "800×400×2000"];
-  const [selectedParents, setSelectedParents] = useState<string[]>(["500×500×2000"]);
+  const [selectedParents, setSelectedParents] = useState<string[]>([
+    "500×500×2000",
+  ]);
 
   // RUN LOGIC
   const [running, setRunning] = useState(false);
@@ -181,28 +183,100 @@ export default function Home() {
   // ==========================
   // AUTHENTICATED API REQUEST FUNCTION
   // ==========================
+  // ==========================
+  // AUTHENTICATED API REQUEST FUNCTION
+  // ==========================
   const makeAuthenticatedRequest = async (
     url: string,
     options: RequestInit = {}
   ) => {
     let token = accessToken;
 
+    console.log(
+      "Making authenticated request with token:",
+      token ? "Present" : "Missing"
+    );
+
+    if (!token) {
+      console.error("No access token available");
+      const storedToken = localStorage.getItem("accessToken");
+      if (storedToken) {
+        token = storedToken;
+        setAccessToken(storedToken);
+      } else {
+        throw new Error("No authentication token available");
+      }
+    }
+
+    // Prepare headers
+    const headers = new Headers(options.headers);
+
     // Add authorization header
-    const headers = {
-      ...options.headers,
-      Authorization: `Bearer ${token}`,
-    };
+    headers.set("Authorization", `Bearer ${token}`);
+
+    // CRITICAL: For FormData, DELETE Content-Type to let browser set it with boundary
+    if (options.body instanceof FormData) {
+      headers.delete("Content-Type");
+      console.log("FormData detected - Content-Type header removed");
+    } else {
+      // Only set Content-Type for non-FormData requests
+      if (!headers.has("Content-Type")) {
+        headers.set("Content-Type", "application/json");
+      }
+    }
+
+    // Build full URL
+    let fullUrl = url;
+    if (url.startsWith("/")) {
+      fullUrl = `${API_URL}${url}`;
+    }
+
+    console.log(`Request URL: ${fullUrl}`);
+    console.log(`Request method: ${options.method || "GET"}`);
+    console.log(
+      `Body type:`,
+      options.body instanceof FormData ? "FormData" : typeof options.body
+    );
+    console.log(`Headers:`, Object.fromEntries(headers.entries()));
 
     try {
-      const response = await fetch(url, { ...options, headers });
+      const response = await fetch(fullUrl, {
+        ...options,
+        headers,
+      });
+
+      console.log(`Response status: ${response.status}`);
+
+      // Log response for debugging
+      if (!response.ok) {
+        const responseText = await response.text();
+        console.error(`Response error:`, responseText);
+
+        // Try to parse as JSON
+        try {
+          const errorData = JSON.parse(responseText);
+          console.error(`Parsed error:`, errorData);
+        } catch (e) {
+          console.error(`Raw error text:`, responseText);
+        }
+      }
 
       // If token expired, try to refresh it
       if (response.status === 401) {
+        console.log("Token expired, attempting refresh...");
         const newToken = await refreshAccessToken();
         if (newToken) {
-          // Retry request with new token
-          headers.Authorization = `Bearer ${newToken}`;
-          return await fetch(url, { ...options, headers });
+          headers.set("Authorization", `Bearer ${newToken}`);
+
+          // For FormData, make sure Content-Type is still deleted after refresh
+          if (options.body instanceof FormData) {
+            headers.delete("Content-Type");
+          }
+
+          return await fetch(fullUrl, { ...options, headers });
+        } else {
+          handleLogout();
+          throw new Error("Session expired. Please login again.");
         }
       }
 
@@ -234,7 +308,7 @@ export default function Home() {
       setError(null);
 
       // Use authenticated request for upload
-      const response = await makeAuthenticatedRequest("/api/upload", {
+      const response = await makeAuthenticatedRequest(`/api/upload/`, {
         method: "POST",
         body: formData,
         // Don't set Content-Type header for FormData, let browser set it
@@ -450,7 +524,7 @@ export default function Home() {
 
       // Call the optimization API
       const response = await makeAuthenticatedRequest(
-        `${API_URL}/api/configurations/top3/`,
+        `/api/configurations/top3/`,
         {
           method: "POST",
           headers: {
@@ -472,7 +546,9 @@ export default function Home() {
       const transformedApproaches =
         result.configurations?.map((config: any, idx: number) => ({
           title: `Approach ${config.rank}`,
-          desc: config.description || `Optimized cutting plan using ${selectedParents.length} stock type(s)`,
+          desc:
+            config.description ||
+            `Optimized cutting plan using ${selectedParents.length} stock type(s)`,
           efficiency: `${config.efficiency?.toFixed(1)}%`,
           waste: `${config.waste?.toFixed(1)}%`,
           color:
@@ -681,23 +757,53 @@ export default function Home() {
             </button>
 
             {/* File requirements info */}
+            {/* File requirements info */}
             {blockData.length === 0 && (
               <div className="mt-4 p-4 bg-blue-50/50 rounded-lg border border-blue-200/50">
-                <h4 className="font-semibold text-blue-800 mb-2 flex items-center gap-2">
-                  <svg
-                    className="w-4 h-4"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
+                <div className="flex justify-between items-start mb-2">
+                  <h4 className="font-semibold text-blue-800 mb-2 flex items-center gap-2">
+                    <svg
+                      className="w-4 h-4"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                    Expected Excel Format:
+                  </h4>
+
+                  {/* Download Sample Button */}
+                  <a
+                    href="/Triel_3_rows.xlsx"
+                    download="Triel_3_rows.xlsx"
+                    className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-sm font-semibold rounded-lg shadow hover:from-green-600 hover:to-emerald-700 transition-all duration-300 hover:scale-105 active:scale-95"
+                    onClick={(e) => {
+                      // Optional: Add tracking or analytics
+                      console.log("Sample Excel file downloaded");
+                    }}
                   >
-                    <path
-                      fillRule="evenodd"
-                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  Expected Excel Format:
-                </h4>
-                <ul className="text-sm text-blue-700 list-disc list-inside space-y-1">
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                      />
+                    </svg>
+                    Download Sample
+                  </a>
+                </div>
+
+                <ul className="text-sm text-blue-700 list-disc list-inside space-y-1 mb-3">
                   <li>
                     Columns: MARK, A(W1), B(W2), C(angle), D(length), Thickness,
                     α, Volume, AD, UW-(Kg), Nos, TOT V, TOT KG
@@ -705,6 +811,10 @@ export default function Home() {
                   <li>First row should contain headers</li>
                   <li>Supported formats: Excel (.xlsx, .xls) or CSV</li>
                 </ul>
+
+                <p className="text-xs text-blue-600 italic mt-2">
+                  Download the sample file above to see the required format
+                </p>
               </div>
             )}
           </div>
@@ -1033,8 +1143,11 @@ export default function Home() {
               {selectedParents.length > 0 && (
                 <div className="mt-4 p-3 bg-purple-50/50 rounded-lg border border-purple-200/50">
                   <p className="text-sm text-purple-700">
-                    <span className="font-semibold">{selectedParents.length}</span>{" "}
-                    parent block{selectedParents.length > 1 ? "s" : ""} selected:
+                    <span className="font-semibold">
+                      {selectedParents.length}
+                    </span>{" "}
+                    parent block{selectedParents.length > 1 ? "s" : ""}{" "}
+                    selected:
                     <span className="ml-2 font-medium">
                       {selectedParents.join(", ")}
                     </span>
@@ -1074,10 +1187,14 @@ export default function Home() {
             <button
               onClick={onRun}
               disabled={
-                running || blockData.length === 0 || selectedParents.length === 0
+                running ||
+                blockData.length === 0 ||
+                selectedParents.length === 0
               }
               className={`px-12 py-4 rounded-xl text-white font-semibold text-lg shadow-2xl transform transition-all duration-300 hover:scale-105 active:scale-95 ${
-                running || blockData.length === 0 || selectedParents.length === 0
+                running ||
+                blockData.length === 0 ||
+                selectedParents.length === 0
                   ? "bg-gradient-to-r from-gray-400 to-gray-500 cursor-not-allowed"
                   : "bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 shadow-blue-500/25"
               }`}
@@ -1146,8 +1263,21 @@ export default function Home() {
                   key={idx}
                   onClick={() => {
                     if (a.visualizationFile) {
-                      const fullPath = `${API_URL}/api/visualizations/${a.visualizationFile}`;
-                      window.open(fullPath, "_blank");
+                      // Clean the filename
+                      let cleanFilename = a.visualizationFile;
+                      if (cleanFilename.startsWith("visualizations/")) {
+                        cleanFilename = cleanFilename.replace(
+                          "visualizations/",
+                          ""
+                        );
+                      }
+                      // Navigate to the visualization page
+                      window.open(
+                        `/visualization?file=${encodeURIComponent(
+                          cleanFilename
+                        )}`,
+                        "_blank"
+                      );
                     }
                   }}
                   className={`bg-gradient-to-br ${
